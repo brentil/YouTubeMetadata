@@ -81,10 +81,16 @@ namespace YouTubeMetadata
 
             var searchListRequest = youtubeService.Search.List("snippet");
             searchListRequest.Q = thisSearchTerm;
-            searchListRequest.MaxResults = 1;
+            searchListRequest.MaxResults = 2;
 
             // Call the search.list method to retrieve results matching the specified query term.
             var searchListResponse = await searchListRequest.ExecuteAsync();
+
+            if (searchListResponse.Items.Count == 0)
+            {
+                searchListRequest.Q = thisSearchTerm.Replace("_", "");
+                searchListResponse = await searchListRequest.ExecuteAsync();
+            }
 
             List<string> videos = new List<string>();
 
@@ -111,15 +117,22 @@ namespace YouTubeMetadata
 
             if(searchListResponse.Items.Count > 0)
             {
-                if(searchListResponse.Items[0].Id.Kind.Contains("youtube#video"))
+                int chooseSearchResult = 0;
+
+                if (!searchListResponse.Items[0].Id.Kind.Contains("youtube#video"))
+                {
+                    chooseSearchResult = 1;
+                }
+
+                if (searchListResponse.Items[chooseSearchResult].Id.Kind.Contains("youtube#video"))
                 {
                     string newChannelFolder = ymGlobals.ymScanLocation 
                         + "\\" 
-                        + searchListResponse.Items[0].Snippet.ChannelTitle.ToString();
+                        + searchListResponse.Items[chooseSearchResult].Snippet.ChannelTitle.ToString();
 
-                    string newFileName = searchListResponse.Items[0].Snippet.ChannelTitle
+                    string newFileName = searchListResponse.Items[chooseSearchResult].Snippet.ChannelTitle
                         + " - "
-                        + searchListResponse.Items[0].Snippet.PublishedAtRaw.Remove(searchListResponse.Items[0].Snippet.PublishedAtRaw.IndexOf("T"))
+                        + searchListResponse.Items[chooseSearchResult].Snippet.PublishedAtRaw.Remove(searchListResponse.Items[chooseSearchResult].Snippet.PublishedAtRaw.IndexOf("T"))
                         + " - "
                         + thisSearchTerm
                         + Path.GetExtension(thisVideo);
@@ -132,18 +145,44 @@ namespace YouTubeMetadata
                     {
                         Console.WriteLine("New file name: " + newChannelFolder + "\\" + newFileName);
                         log.Info("New file name: " + newChannelFolder + "\\" + newFileName);
-                        File.Copy(thisVideo, newChannelFolder + "\\" + newFileName);
+
+                        try
+                        {
+                            File.Copy(thisVideo, newChannelFolder + "\\" + newFileName);
+                        }
+                        catch (IOException)
+                        {
+                            System.Threading.Thread.Sleep(1000);
+
+                            Console.WriteLine("New file name retry: " + newChannelFolder + "\\" + newFileName);
+                            log.Info("New file name retry: " + newChannelFolder + "\\" + newFileName);
+
+                            File.Copy(thisVideo, newChannelFolder + "\\" + newFileName);
+                        }
                     }
                     else
                     {
                         Console.WriteLine("New file name: " + newChannelFolder + "\\" + newFileName);
                         log.Info("New file name: " + newChannelFolder + "\\" + newFileName);
-                        File.Move(thisVideo, newChannelFolder + "\\" + newFileName);
+                        
+                        try
+                        {
+                            File.Move(thisVideo, newChannelFolder + "\\" + newFileName);
+                        }
+                        catch (IOException)
+                        {
+                            System.Threading.Thread.Sleep(1000);
+
+                            Console.WriteLine("New file name retry: " + newChannelFolder + "\\" + newFileName);
+                            log.Info("New file name retry: " + newChannelFolder + "\\" + newFileName);
+
+                            File.Move(thisVideo, newChannelFolder + "\\" + newFileName);
+                        }
                     }
 
                     using (WebClient client = new WebClient())
                     {
-                        client.DownloadFile(searchListResponse.Items[0].Snippet.Thumbnails.High.Url, @newChannelFolder + "\\channelBanner.jpg");
+                        client.DownloadFile(searchListResponse.Items[chooseSearchResult].Snippet.Thumbnails.High.Url, @newChannelFolder + "\\channelBanner.jpg");
                     }
 
                     TagLib.File fileToTag = null;
@@ -153,13 +192,13 @@ namespace YouTubeMetadata
                         fileToTag = TagLib.File.Create(newChannelFolder + "\\" + newFileName);
 
                         // Set comment tag
-                        fileToTag.Tag.Comment = searchListResponse.Items[0].Snippet.Description.ToString();
+                        fileToTag.Tag.Comment = searchListResponse.Items[chooseSearchResult].Snippet.Description.ToString();
                         fileToTag.Save();
 
                         // Check if comment tag set
                         fileToTag = TagLib.File.Create(newChannelFolder + "\\" + newFileName);
 
-                        if (fileToTag.Tag.Comment != searchListResponse.Items[0].Snippet.Description.ToString())
+                        if (fileToTag.Tag.Comment != searchListResponse.Items[chooseSearchResult].Snippet.Description.ToString())
                             throw new Exception("Could not set comment tag. This file format is not supported.");
                     }
                     catch (Exception ex)
